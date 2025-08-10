@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>MageArenaChinese</AssemblyName>
+    <Product>MageArenaChinese</Product>
+    <Version>1.2.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+      https://nuget.samboy.dev/v3/index.json
+    </RestoreAdditionalProjectSources>
+    <RootNamespace>MageArenaChinese</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 遊戲 DLL 參考 -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Mage Arena\MageArena_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Recognissimo">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Mage Arena\MageArena_Data\Managed\Recognissimo.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="FishNet.Runtime">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Mage Arena\MageArena_Data\Managed\FishNet.Runtime.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="DissonanceVoip">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Mage Arena\MageArena_Data\Managed\DissonanceVoip.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>..\packages\Lib.Harmony.2.3.6\lib\net48\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BlackMagicAPI">
+      <HintPath>C:\Users\sebas\AppData\Roaming\Thunderstore Mod Manager\DataFolder\MageArena\profiles\hola\BepInEx\plugins\D1GQ-BlackMagicAPI\BlackMagicAPI\BlackMagicAPI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NuGet 套件 -->
+    <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.*" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+    <PackageReference Include="UnityEngine.Modules" Version="2023.2" IncludeAssets="compile" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.2" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
