@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace MageArenaSpanish
 {
-    internal class SpanishModelController
+    internal class ChineseModelController
     {
         
 

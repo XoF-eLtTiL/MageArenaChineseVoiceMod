@@ -1,551 +1,276 @@
-﻿using System;
+﻿using HarmonyLib;
+using Recognissimo;
+using Recognissimo.Components;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
-using BepInEx;
-using BlackMagicAPI;
-using HarmonyLib;
-using Recognissimo;
-using Recognissimo.Components;
+using System.Linq;
 using UnityEngine;
-using UnityEngine.Profiling;
 
-namespace MageArenaSpanish.Patches.Voice
+namespace MageArenaChinese.Patches.Voice
 {
-    // Token: 0x02000007 RID: 7
+    /// <summary>
+    /// 對 VoiceControlListener 的中文語音擴充 Patch
+    /// </summary>
     [HarmonyPatch(typeof(VoiceControlListener))]
     internal class VoiceControlListenerPatch
     {
+        // —— OnStartClient：啟動後等待 PlayerInventory 準備好，再追加中文詞彙 ——
         [HarmonyPatch("OnStartClient")]
         [HarmonyPrefix]
         private static void OnStartClient_Prefix(VoiceControlListener __instance)
         {
-            __instance.StartCoroutine(VoiceControlListenerPatch.CoWaitGetPlayer(__instance));
+            __instance.StartCoroutine(CoWaitGetPlayer(__instance));
         }
 
+        /// <summary>
+        /// 等到 PlayerInventory 可用，再更新語音詞彙
+        /// </summary>
         private static IEnumerator CoWaitGetPlayer(VoiceControlListener __instance)
         {
-            while (__instance.pi == null)
+            // 最多等 5 秒，避免無限等待
+            var timeout = Time.time + 5f;
+
+            while (__instance.pi == null && Time.time < timeout)
             {
-                PlayerInventory playerInventory = null;
-                bool flag = Camera.main.transform.parent != null && Camera.main.transform.parent.TryGetComponent<PlayerInventory>(out playerInventory);
-
-
-
-                if (flag)
+                var cam = Camera.main;
+                if (cam != null)
                 {
-                    __instance.pi = playerInventory;
+                    var parent = cam.transform?.parent;
+                    if (parent != null && parent.TryGetComponent<PlayerInventory>(out var inv))
+                    {
+                        __instance.pi = inv;
+                        break;
+                    }
                 }
                 yield return null;
-                playerInventory = null;
             }
+
+            // 再等半秒讓組件穩定
             yield return null;
             yield return new WaitForSeconds(0.5f);
-            VoiceControlListenerPatch.AddToVocabulary(__instance);
-            yield break;
+
+            AddToVocabularySafe(__instance);
         }
 
-        private static void AddToVocabulary(VoiceControlListener __instance)
+        /// <summary>
+        /// 安全地更新辨識詞彙（先停止 → 加詞 → 重啟）
+        /// </summary>
+        private static void AddToVocabularySafe(VoiceControlListener __instance)
         {
-            MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Log.LogInfo("Cargando vocabulario nuevo...");
+            MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogInfo("正在載入中文語音詞彙…");
 
-            // Accede a 'sr' aunque sea privado
             var srField = AccessTools.Field(typeof(VoiceControlListener), "sr");
             var sr = srField.GetValue(__instance) as SpeechRecognizer;
             if (sr == null)
             {
-                MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Log.LogWarning("No se pudo obtener SpeechRecognizer.");
+                MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogWarning("無法取得 SpeechRecognizer（sr）。");
                 return;
             }
 
-            sr.Vocabulary.Add("espejo");     // mirror
-            sr.Vocabulary.Add("bola de fuego"); // fireball
-            sr.Vocabulary.Add("congelar");   // freeze
-            sr.Vocabulary.Add("entrada");     // worm
-            sr.Vocabulary.Add("salida");    // hole
-            sr.Vocabulary.Add("misil magico"); // magic missile
-
-            foreach (string text in VoiceControlListenerPatch._phoneticMap.Keys)
+            try
             {
-                if (!sr.Vocabulary.Contains(text))
-                {
-                    sr.Vocabulary.Add(text);
-                    MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Log.LogInfo("Añadido " + text + " al vocabulario.");
-                }
+                // 保險作法：先停，更新詞彙後再重啟
+                sr.StopProcessing();
+
+                // —— 基礎中文口令（同時保留英文對應，提升容錯） ——
+                AddIfMissing(sr.Vocabulary, "鏡子");       // mirror
+                AddIfMissing(sr.Vocabulary, "火球術");     // fireball
+                AddIfMissing(sr.Vocabulary, "冰箭");       // freeze
+                AddIfMissing(sr.Vocabulary, "入口");       // worm（入口）
+                AddIfMissing(sr.Vocabulary, "出口");       // hole（出口）
+                AddIfMissing(sr.Vocabulary, "魔法飛彈");   // magic missile
+
+                // 英文備援
+                AddIfMissing(sr.Vocabulary, "mirror");
+                AddIfMissing(sr.Vocabulary, "fire");
+                AddIfMissing(sr.Vocabulary, "ball");
+                AddIfMissing(sr.Vocabulary, "freeze");
+                AddIfMissing(sr.Vocabulary, "worm");
+                AddIfMissing(sr.Vocabulary, "hole");
+                AddIfMissing(sr.Vocabulary, "magic");
+                AddIfMissing(sr.Vocabulary, "missle");    // 原作拼法
+                AddIfMissing(sr.Vocabulary, "missile");   // 正確拼法也收一下
+
+                // 西文/發音變體（可選）
+                foreach (var term in _phoneticMap.Keys)
+                    AddIfMissing(sr.Vocabulary, term);
+
+                MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogInfo("中文語音詞彙已更新。");
+
+                // 依原始類別是否提供 restartsr() 來決定重啟方式
+                var m = AccessTools.Method(typeof(VoiceControlListener), "restartsr");
+                if (m != null)
+                    __instance.StartCoroutine((IEnumerator)m.Invoke(__instance, null));
+                else
+                    sr.StartProcessing();
+            }
+            catch (Exception e)
+            {
+                MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogError($"更新語音詞彙時發生例外：{e}");
             }
         }
 
+        private static void AddIfMissing(ICollection<string> vocab, string term)
+        {
+            if (!vocab.Contains(term)) vocab.Add(term);
+        }
+
+        // —— tryresult：核心辨識邏輯，改成中文優先，仍保留英文詞 —— //
         [HarmonyPatch("tryresult")]
         [HarmonyPrefix]
         private static void TryResult_LogPrefix(string res)
         {
-            // Puedes usar tu logger, aquí uso Debug.Log para que se vea en el log de Unity
-            //Debug.Log("[Reconocido por voz] " + res);
-            // Si tienes tu logger personalizado:
             if (!string.IsNullOrEmpty(res))
-                MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Log.LogInfo("[Reconocido por voz] " + res);
+                MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogInfo($"[語音辨識] {res}");
         }
-
 
         [HarmonyPatch("tryresult")]
         [HarmonyPrefix]
         private static bool TryResult_Prefix(VoiceControlListener __instance, string res)
         {
-            // ¡AQUÍ TU NUEVA LÓGICA!
-            if (!string.IsNullOrEmpty(res))
+            if (!string.IsNullOrWhiteSpace(res))
             {
-                // Logging para debug
-                Debug.Log("[Reconocido por voz] " + res);
+                var input = res.Trim();
 
-                // Comandos en inglés (original) y español (tú modificas)
-                if (res.Contains("fire") || res.Contains("ball") || res.Contains("fuego") || res.Contains("bola"))
+                // —— 直接施放型：以中文為主、英文為輔 —— //
+                if (ContainsAny(input, "火球術", "火球", "fireball", "fire", "ball", "火", "球"))
                 {
                     __instance.CastFireball();
+                    return false;
                 }
-                else if (res.Contains("freeze") || res.Contains("ease") || res.Contains("congelar"))
+                else if (ContainsAny(input, "冰箭", "凍結", "freeze", "冰", "箭"))
                 {
                     __instance.CastFrostBolt();
+                    return false;
                 }
-                else if (res.Contains("worm") || res.Contains("entrada"))
+                else if (ContainsAny(input, "入口", "worm"))
                 {
                     __instance.CastWorm();
+                    return false;
                 }
-                else if (res.Contains("hole") || res.Contains("salida"))
+                else if (ContainsAny(input, "出口", "hole"))
                 {
                     __instance.CastHole();
+                    return false;
                 }
-                else if (res.Contains("missle") || res.Contains("magic") || res.Contains("misil") || res.Contains("mágico") || res.Contains("magico") )
+                else if (ContainsAny(input, "魔法飛彈", "魔法", "飛彈", "magic missile", "magic", "missle", "missile"))
                 {
                     __instance.CastMagicMissle();
+                    return false;
                 }
-                else if (res.Contains("mirror") || res.Contains("espejo"))
+                else if (ContainsAny(input, "鏡子", "mirror"))
                 {
                     __instance.ActivateMirror();
-                }
-
-                if (res.Contains("blink") || res.Contains("parpadeo"))
-                {
-                    foreach (ISpellCommand spellPage in __instance.SpellPages)
-                    {
-                        if (spellPage.GetSpellName() == "blink" || spellPage.GetSpellName() == "parpadeo")
-                        {
-                            spellPage.TryCastSpell();
-                        }
-                    }
-                    return false; // No ejecuta el original
-                }
-
-                if (res.Contains("dark") || res.Contains("oscuro"))
-                {
-                    foreach (ISpellCommand spellPage2 in __instance.SpellPages)
-                    {
-                        if (spellPage2.GetSpellName() == "blast" || spellPage2.GetSpellName() == "explosión")
-                        {
-                            spellPage2.TryCastSpell();
-                        }
-                    }
                     return false;
                 }
 
-                foreach (ISpellCommand spellPage3 in __instance.SpellPages)
+                // —— SpellPages 內的咒語（以顯示名稱比對） —— //
+                if (ContainsAny(input, "閃現", "blink"))
                 {
-                    if (res.Contains(spellPage3.GetSpellName()))
+                    foreach (var page in __instance.SpellPages)
                     {
-                        spellPage3.TryCastSpell();
+                        if (EqualsIgnoreCase(page.GetSpellName(), "閃現") ||
+                            EqualsIgnoreCase(page.GetSpellName(), "blink"))
+                        {
+                            page.TryCastSpell();
+                            return false;
+                        }
                     }
                 }
-                return false; // Muy importante: esto cancela el método original
+
+                if (ContainsAny(input, "黑暗", "dark"))
+                {
+                    foreach (var page in __instance.SpellPages)
+                    {
+                        if (EqualsIgnoreCase(page.GetSpellName(), "爆破") ||
+                            EqualsIgnoreCase(page.GetSpellName(), "blast"))
+                        {
+                            page.TryCastSpell();
+                            return false;
+                        }
+                    }
+                }
+
+                // 其他情況：若輸入剛好包含某個 SpellPages 的名稱就嘗試施放
+                foreach (var page in __instance.SpellPages)
+                {
+                    var spellName = page.GetSpellName();
+                    if (string.IsNullOrEmpty(spellName)) continue;
+
+                    // 允許中英文名稱
+                    if (input.IndexOf(spellName, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        page.TryCastSpell();
+                        return false;
+                    }
+                }
+
+                // 已處理所有分支，不執行原方法
+                return false;
             }
 
-            // Si no había comando, sigue el mismo comportamiento original:
+            // 若沒有輸入，沿用原本行為：停止 → 重啟
             var srField = AccessTools.Field(typeof(VoiceControlListener), "sr");
-            var sr = srField.GetValue(__instance) as Recognissimo.Components.SpeechRecognizer;
+            var sr = srField.GetValue(__instance) as SpeechRecognizer;
             if (sr != null)
             {
                 sr.StopProcessing();
-                __instance.StartCoroutine((System.Collections.IEnumerator)AccessTools.Method(typeof(VoiceControlListener), "restartsr").Invoke(__instance, null));
+                __instance.StartCoroutine((IEnumerator)AccessTools.Method(typeof(VoiceControlListener), "restartsr")
+                    .Invoke(__instance, null));
             }
-
-            // Y retorna false para NO ejecutar el original
             return false;
         }
 
+        private static bool ContainsAny(string src, params string[] keys)
+        {
+            foreach (var k in keys)
+            {
+                if (string.IsNullOrEmpty(k)) continue;
+                if (src.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+            return false;
+        }
+
+        private static bool EqualsIgnoreCase(string a, string b)
+            => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+        // —— 模型路徑攔截：改中文日誌，維持原本導向（如需改中文模型，請把路徑換成你的中文模型資料夾） —— //
         [HarmonyPatch(typeof(LanguageModel), MethodType.Constructor, new Type[] { typeof(string) })]
         [HarmonyPrefix]
         public static void LanguageModel_Ctor_Prefix(ref string path)
         {
-            MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Log.LogWarning("Cargando modelo español: " + path);
-            string myPluginPath = MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Instance.Info.Location;
+            MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogWarning($"正在載入語音模型：{path}");
+            string myPluginPath = MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Instance.Info.Location;
             string modDir = Path.GetDirectoryName(myPluginPath);
-            string modPath = Path.Combine(modDir, "LanguageModels", "vosk-model-small-en-us-0.15");
-            path = modPath;
-            MageArenaSpanishVoiceMod.MageArenaSpanishVoiceMod.Log.LogWarning("Redirigido modelo a: " + path);
 
+            // 目前仍導向英語模型，若你已放置中文模型，請改這行：
+             string modPath = Path.Combine(modDir, "LanguageModels", "vosk-model-small-cn-0.22");
+            //string modPath = Path.Combine(modDir, "LanguageModels", "vosk-model-small-en-us-0.15");
+
+            path = modPath;
+            MageArenaChineseVoiceMod.MageArenaChineseVoiceMod.Log.LogWarning($"模型路徑已改為：{path}");
         }
 
+        // —— 發音/變體對應（可保留／可刪除） —— //
         private static readonly Dictionary<string, string> _phoneticMap = new Dictionary<string, string>
         {
-            {
-                "fuegos",
-                "fuego"
-            },
-            {
-                "juego",
-                "fuego"
-            },
-            {
-                "fuego",
-                "fuego"
-            },
-            {
-                "fiar",
-                "fire"
-            },
-            {
-                "fayer",
-                "fire"
-            },
-            {
-                "bola",
-                "ball"
-            },
-            {
-                "bolas",
-                "ball"
-            },
-            {
-                "frees",
-                "freeze"
-            },
-            {
-                "ease",
-                "freeze"
-            },
-            {
-                "frieze",
-                "freeze"
-            },
-            {
-                "friz",
-                "freeze"
-            },
-            {
-                "freese",
-                "freeze"
-            },
-            {
-                "entrada",
-                "worm"
-            },
-            {
-                "salida",
-                "hole"
-            }
-/*            {
-                "froze",
-                "freeze"
-            },
-            {
-                "fleez",
-                "freeze"
-            },
-            {
-                "furizu",
-                "freeze"
-            },
-            {
-                "werm",
-                "worm"
-            },
-            {
-                "vorm",
-                "worm"
-            },
-            {
-                "warm",
-                "worm"
-            },
-            {
-                "wurm",
-                "worm"
-            },
-            {
-                "walrm",
-                "worm"
-            },
-            {
-                "hol",
-                "hole"
-            },
-            {
-                "howl",
-                "hole"
-            },
-            {
-                "hohl",
-                "hole"
-            },
-            {
-                "haul",
-                "hole"
-            },
-            {
-                "hool",
-                "hole"
-            },
-            {
-                "missel",
-                "missle"
-            },
-            {
-                "misle",
-                "missle"
-            },
-            {
-                "majik",
-                "magico"
-            },
-            {
-                "madgic",
-                "magico"
-            },
-            {
-                "mejik",
-                "magic"
-            },
-            {
-                "missail",
-                "missle"
-            },
-            {
-                "misail",
-                "missle"
-            },
-            {
-                "mizile",
-                "missle"
-            },
-            {
-                "blenk",
-                "blink"
-            },
-            {
-                "blank",
-                "blink"
-            },
-            {
-                "bleenk",
-                "blink"
-            },
-            {
-                "brink",
-                "blink"
-            },
-            {
-                "burinku",
-                "blink"
-            },
-            {
-                "dork",
-                "dark"
-            },
-            {
-                "derk",
-                "dark"
-            },
-            {
-                "dak",
-                "dark"
-            },
-            {
-                "dahk",
-                "dark"
-            },
-            {
-                "blost",
-                "blast"
-            },
-            {
-                "blust",
-                "blast"
-            },
-            {
-                "brast",
-                "blast"
-            },
-            {
-                "burasto",
-                "blast"
-            },
-            {
-                "merror",
-                "mirror"
-            },
-            {
-                "mira",
-                "mirror"
-            },
-            {
-                "meeror",
-                "mirror"
-            },
-            {
-                "mirrar",
-                "mirror"
-            },
-            {
-                "mirorr",
-                "mirror"
-            },
-            {
-                "miller",
-                "mirror"
-            },
-            {
-                "miroru",
-                "mirror"
-            },
-            {
-                "devine",
-                "divine"
-            },
-            {
-                "divayn",
-                "divine"
-            },
-            {
-                "diveen",
-                "divine"
-            },
-            {
-                "divyne",
-                "divine"
-            },
-            {
-                "dibin",
-                "divine"
-            },
-            {
-                "divain",
-                "divine"
-            },
-            {
-                "divinu",
-                "divine"
-            },
-            {
-                "wips",
-                "wisp"
-            },
-            {
-                "vesp",
-                "wisp"
-            },
-            {
-                "whisp",
-                "wisp"
-            },
-            {
-                "wesp",
-                "wisp"
-            },
-            {
-                "wipsu",
-                "wisp"
-            },
-            {
-                "vispu",
-                "wisp"
-            },
-            {
-                "wispu",
-                "wisp"
-            },
-            {
-                "thunder",
-                "thunder"
-            },
-            {
-                "thuner",
-                "thunder"
-            },
-            {
-                "tunder",
-                "thunder"
-            },
-            {
-                "sander",
-                "thunder"
-            },
-            {
-                "thunda",
-                "thunder"
-            },
-            {
-                "sandabolt",
-                "thunder"
-            },
-            {
-                "bolt",
-                "bolt"
-            },
-            {
-                "bolto",
-                "bolt"
-            },
-            {
-                "volto",
-                "bolt"
-            },
-            {
-                "bort",
-                "bolt"
-            },
-            {
-                "bold",
-                "bolt"
-            },
-            {
-                "thunderbolto",
-                "thunder"
-            },
-            {
-                "thunderbold",
-                "thunder"
-            },
-            {
-                "rok",
-                "rock"
-            },
-            {
-                "rokk",
-                "rock"
-            },
-            {
-                "raku",
-                "rock"
-            },
-            {
-                "wock",
-                "rock"
-            }*/
-        };
-
-
-        private static readonly HashSet<string> _highConfidenceSpells = new HashSet<string>
-        {
-            "fire",
-            "ball",
-            "freeze",
-            "entrada",
-            "salida",
-            "misil",
-            "magico",
-            "flash",
-            "dark",
-            "blast"
+            // 西語／誤聽對應 → 英文基詞
+            { "fuegos", "fuego" },
+            { "juego",  "fuego" },
+            { "fuego",  "fuego" },
+            { "fiar",   "fire"  },
+            { "fayer",  "fire"  },
+            { "bola",   "ball"  },
+            { "bolas",  "ball"  },
+            { "frees",  "freeze"},
+            { "ease",   "freeze"},
+            { "frieze", "freeze"},
+            { "friz",   "freeze"},
+            { "freese", "freeze"},
+            { "entrada","worm"  },
+            { "salida", "hole"  },
         };
     }
 }
