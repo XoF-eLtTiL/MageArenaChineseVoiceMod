@@ -224,7 +224,10 @@ namespace MageArenaChineseVoice.Patches
                     _log.LogInfo($"[Partial] {t}");
 
                 if (!string.IsNullOrWhiteSpace(t))
+                {
+                    _lastMicActivityTs = Time.realtimeSinceStartup;   // ← 新增
                     TryMatchAndCast(instance, t, source: "partial");
+                }
             });
 
             // ===== Final：原生與模組「同時偵測、先成功先贏」=====
@@ -235,7 +238,11 @@ namespace MageArenaChineseVoice.Patches
                 if (_dbgEnabled && _dbgFinal && !string.IsNullOrWhiteSpace(text))
                     _log.LogInfo($"[Final] {text}");
 
-                instance.StartCoroutine(FinalRace(instance, text));
+                if (!string.IsNullOrWhiteSpace(text))
+                    _lastMicActivityTs = Time.realtimeSinceStartup;   // ← 新增
+
+                // （依你版本：如果已移除原生，就只呼叫 TryMatchAndCast）
+                TryMatchAndCast(instance, text, source: "final");
             });
 
             yield return new WaitForSeconds(_startupWaitSec);
@@ -245,17 +252,32 @@ namespace MageArenaChineseVoice.Patches
             while (instance && instance.isActiveAndEnabled)
             {
                 yield return new WaitForSeconds(_monitorIntervalSec);
+
+                var sr  = srRef(instance);
                 var vbt = vbtRef(instance);
-                if (!vbt.IsTransmitting)
+
+                // 若 VBT 正在傳輸，也視為「有活動」
+                if (vbt != null && vbt.IsTransmitting)
+                    _lastMicActivityTs = Time.realtimeSinceStartup;
+
+                // 只有當：
+                //  1) SR 正在運行（Processing）
+                //  2) 且「長時間沒有任何活動」（partial/final 也沒更新）
+                //  3) 且與上次重啟已間隔一段時間
+                // 才認定為 idle 卡死，進行重啟
+                bool srBusy = (sr != null && sr.State == SpeechProcessorState.Processing);
+                float idleFor = Time.realtimeSinceStartup - _lastMicActivityTs;
+                bool debounceOk = (Time.realtimeSinceStartup - _lastRestartTs) >= RESTART_DEBOUNCE_SEC;
+
+                if (srBusy && idleFor >= MIC_IDLE_TIMEOUT_SEC && debounceOk)
                 {
-                    var sr = srRef(instance);
-                    if (sr != null && sr.State != SpeechProcessorState.Inactive)
-                    {
-                        if (_dbgEnabled && _dbgDecision)
-                            _log.LogWarning("[Monitor] Mic idle detected. Restart recognizer.");
-                        sr.StopProcessing();
-                        instance.StartCoroutine((IEnumerator)restartsrMethod.Invoke(instance, null));
-                    }
+                    if (_dbgEnabled && _dbgDecision)
+                        _log.LogWarning($"[Monitor] IdleFor={idleFor:0.00}s (no partial/final). Restart recognizer.");
+
+                    _lastRestartTs = Time.realtimeSinceStartup;
+
+                    sr.StopProcessing();
+                    instance.StartCoroutine((IEnumerator)restartsrMethod.Invoke(instance, null));
                 }
             }
         }
@@ -587,5 +609,12 @@ namespace MageArenaChineseVoice.Patches
             }
             return dict;
         }
+
+        // 追蹤最後一次偵測到語音活動的時間（partial/final 有字、或 VBT 傳輸）
+        private static float _lastMicActivityTs;
+        // restart 節流（避免連續重啟）
+        private static float _lastRestartTs;
+        private const float  MIC_IDLE_TIMEOUT_SEC = 5.0f;   // 超過這秒數都沒活動才重啟（可調）
+        private const float  RESTART_DEBOUNCE_SEC = 2.0f;   // 重啟之間至少間隔（可調）
     }
 }

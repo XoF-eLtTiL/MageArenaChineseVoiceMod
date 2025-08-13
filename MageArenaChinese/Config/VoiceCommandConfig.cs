@@ -132,23 +132,23 @@ namespace MageArenaChineseVoice.Config
 
             // === 詞表（中文）===
             FireballCommand = BindCommand(config, "Commands", "Fireball",
-                "火球 火球術 大爆炸",
+                "火球 爆裂 大爆炸",
                 "中文口令：火球術（空格分隔多個同義詞）");
 
             FrostBoltCommand = BindCommand(config, "Commands", "FrostBolt",
-                "冰凍 冰槍 凍住 冰凍術",
+                "冰凍 冰槍 凍住 ",
                 "中文口令：冰凍術（空格分隔多個同義詞）");
 
             WormCommand = BindCommand(config, "Commands", "Worm",
-                "入口",
+                "入口 芝麻",
                 "中文口令：入口（空格分隔多個同義詞）");
 
             HoleCommand = BindCommand(config, "Commands", "Hole",
-                "出口",
+                "出口 開門",
                 "中文口令：出口（空格分隔多個同義詞）");
 
             MagicMissileCommand = BindCommand(config, "Commands", "MagicMissile",
-                "魔法飛彈 魔法 飛彈 魔彈 ",
+                "魔法飛彈 魔彈 飛彈 魔法彈 魔法",
                 "中文口令：魔法飛彈（空格分隔多個同義詞）");
 
             MirrorCommand = BindCommand(config, "Commands", "Mirror",
@@ -157,27 +157,27 @@ namespace MageArenaChineseVoice.Config
 
             // === 追加咒語（SpellPages）===
             RockCommand = BindCommand(config, "AdditionalCommands", "Rock",
-                "巨石 岩石",
+                "巨石 岩石 大石",
                 "中文口令：巨石（空格分隔多個同義詞）");
 
             WispCommand = BindCommand(config, "AdditionalCommands", "Wisp",
-                "鬼火 精靈",
+                "鬼火 精靈 光靈 靈火",
                 "中文口令：光靈（空格分隔多個同義詞）");
 
             BlastCommand = BindCommand(config, "AdditionalCommands", "Blast",
-                "爆破 黑暗 衝擊",
+                "爆破 黑暗 衝擊 衝擊 暗影 波動",
                 "中文口令：暗影衝擊（空格分隔多個同義詞）");
 
             DivineCommand = BindCommand(config, "AdditionalCommands", "Divine",
-                "聖光 光明 奇蹟 治療",
+                "聖光 光明 奇蹟 治療 治癒",
                 "中文口令：聖光（空格分隔多個同義詞）");
 
             BlinkCommand = BindCommand(config, "AdditionalCommands", "Blink",
-                "閃現",
+                "閃現 瞬移 傳送",
                 "中文口令：閃現（空格分隔多個同義詞）");
 
             ThunderboltCommand = BindCommand(config, "AdditionalCommands", "Thunderbolt",
-                "雷霆一擊 閃電 雷擊",
+                "雷霆一擊 閃電 雷擊 霹靂 雷電",
                 "中文口令：雷霆一擊（空格分隔多個同義詞）");
 
             // 額外模組咒語
@@ -196,7 +196,7 @@ namespace MageArenaChineseVoice.Config
             StartupWaitSec = config.Bind("Timing", "StartupWaitSec", 0.05f, "初次啟動識別前的等待（秒）。");
             ResetStopWaitSec = config.Bind("Timing", "ResetStopWaitSec", 0.01f, "Reset 時 StopProcessing 後等待（秒）。");
             RestartWaitSec = config.Bind("Timing", "RestartWaitSec", 0.00f, "Reset 結束後 StartProcessing 前等待（秒）。");
-            MonitorIntervalSec = config.Bind("Timing", "MonitorIntervalSec", 2.0f, "麥克風狀態檢查間隔（秒）。");
+            MonitorIntervalSec = config.Bind("Timing", "MonitorIntervalSec", 120.0f, "麥克風狀態檢查間隔（秒）。");
 
             // === Debug ===
             DebugEnabled = config.Bind("Debug", "Enabled", false, "是否啟用 Debug 記錄。");
@@ -384,11 +384,9 @@ namespace MageArenaChineseVoice.Config
             _mapBuilt = true;
 
             const string pairs =
-                "術术 彈弹 鏡镜 聖圣 電电 擊击 閃闪 門门 導导 槍枪 凍冻 許许 靈灵 飛飞 間间 衝冲 開开 強强 牆墙 類类 體体 顏颜 雙双 專专 當当 醫医 後后 復复 額额 線线 網网 書书 競竞 隊队 戰战 擴扩 視视 聯联 錄录 僅仅 藥药 與与 於于 裝装 戲戏 應应 閱阅 祕秘 壇坛 鍊炼 練练 絕绝 結结 經经 紋纹 紅红 綠绿 藍蓝 鎖锁 鑰钥 鑄铸 鍛锻 " +
-                "陰阴 陽阳 鬱郁 廳厅 廠厂 廣广 髮发 臉脸 檔档 盞盏 濟济 憶忆 憂忧 憑凭 盡尽 擁拥 現现 療疗 罰罚 蹟迹 " +
-                "詛诅 詠咏 願愿 龍龙 獸兽 屍尸 妖妖 咒咒 魔魔 護护 幻幻 影影 " +
-                "雷雷 治治 癒愈 火火 焰焰 冰冰 霜霜 風风 雲云 霧雾 光光 線线 " +
-                "傳传 變变 佈布 訊讯 唸念";
+                "術术 彈弹 鏡镜 聖圣 電电 擊击 閃闪 門门 槍枪 凍冻 靈灵 飛飞 間间 衝冲 開开 治治 癒愈 雷雷 魔魔 火火 冰冰 光光 爆爆 岩岩 石石 大大 黑黑 暗暗 影影 波波 動动 奇奇 蹟迹 " +
+                "芝芝 麻麻 出出 口口 進进 入入 出出 口口 巨巨 石石 精精 靈灵 靈灵 暗暗 影影 聖圣 光光 明明 奇奇 蹟迹 治治 癒愈 閃闪 現现 瞬瞬 移移 傳传 送送 雷雷 霆霆 閃闪 電电 擊击 霹霹 靂雳";
+
 
             _t2s = new Dictionary<char, char>(1024);
 
